@@ -184,10 +184,37 @@ def render(
     if summary.get("duplicate_keys"):
         rule("Duplicate citation keys")
         lines.append(
-            style.dim("  BibTeX keeps only one entry per key; the others are lost.")
+            style.dim(
+                "  Collapsed to one entry each, since BibTeX errors on a repeated\n"
+                "  key and would have used only the first anyway."
+            )
         )
+        conflicting = {
+            item["key"]
+            for item in summary.get("dropped_duplicates", [])
+            if not item["identical"]
+        }
         for key, count in sorted(summary["duplicate_keys"].items()):
-            lines.append("  " + style.yellow(f"{key}: {count} entries"))
+            if key in conflicting:
+                lines.append(
+                    "  "
+                    + style.red(
+                        f"{key}: {count} entries, and they are NOT the same work "
+                        "— the extras were dropped"
+                    )
+                )
+            else:
+                lines.append(
+                    "  " + style.yellow(f"{key}: {count} identical entries, merged")
+                )
+        if conflicting:
+            lines.append("")
+            lines.append(
+                style.dim(
+                    "  Give the conflicting works distinct keys in the source and "
+                    "re-run,\n  or a citation now points at the wrong paper."
+                )
+            )
 
     if summary["missing_entries"]:
         rule(f"Entries with unresolved {config['missing']['placeholder']} fields")

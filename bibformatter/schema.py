@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 from bibformatter import venues
+from bibformatter.matching import token_containment
 from bibformatter.normalize import (
     extract_arxiv_id,
     extract_doi,
@@ -15,13 +16,14 @@ from bibformatter.normalize import (
     is_corporate,
     latex_to_text,
     looks_like_initials,
+    normalize_for_match,
     normalize_pages,
     normalize_year,
     parse_name,
     split_authors,
     text_to_latex,
 )
-from bibformatter.providers import BOOK, CONFERENCE, JOURNAL, PREPRINT, Record
+from bibformatter.providers import BOOK, CONFERENCE, JOURNAL, MISC, PREPRINT, Record
 from bibformatter.verify import VERIFIED, Verification
 
 # Which BibTeX type each resolved publication kind becomes.
@@ -269,9 +271,21 @@ def build_note(
 
     doi = local.doi
     url = local.url
-    if verification.record:
+    arxiv_id = local.arxiv_id
+    # Only a verified record may contribute identifiers. A fuzzy candidate was
+    # rejected as "probably a different paper", so taking its DOI would point
+    # the citation at that other paper — the exact error we declined to make
+    # when we refused to overwrite the other fields.
+    if verification.status == VERIFIED and verification.record:
         doi = verification.record.doi or doi
         url = verification.record.url or url
+        arxiv_id = verification.record.arxiv_id or arxiv_id
+
+    # Rule 6 wants a link on every entry. Plenty of venues register no DOI
+    # (ICLR, JMLR, older workshops), so an arXiv id we discovered along the way
+    # is a better answer than MISSING.
+    if not url and arxiv_id:
+        url = f"https://arxiv.org/abs/{arxiv_id}"
 
     chosen: Optional[str] = None
     kind = None
@@ -307,6 +321,12 @@ def build_note(
     return value, f"note: {kind} link {chosen}"
 
 
+# Fields that describe a work's position within a published volume. A preprint
+# record has no meaningful values for these, and databases sometimes supply
+# junk (DBLP's "abs/2101.03961" pseudo-volume), so they are never taken from one.
+_PUBLICATION_ONLY_FIELDS = frozenset({"volume", "number", "pages"})
+
+
 def _remote_value(
     name: str, verification: Verification, config: Dict[str, Any]
 ) -> str:
@@ -315,6 +335,11 @@ def _remote_value(
         or not verification.record
         or not config["verification"]["overwrite_fields"]
         or name in config["verification"]["protected_fields"]
+    ):
+        return ""
+    if (
+        name in _PUBLICATION_ONLY_FIELDS
+        and verification.record.kind in (PREPRINT, MISC)
     ):
         return ""
     return getattr(verification.record, name, "") or ""
@@ -360,9 +385,19 @@ def build_entry(
             values[name] = note_value
 
         elif name == "title":
-            title = _remote_value("title", verification, config) or latex_to_text(
-                local.title
-            )
+            remote_title = _remote_value("title", verification, config)
+            local_title = latex_to_text(local.title)
+            title = remote_title or local_title
+            # Databases often store a title without its subtitle. When the
+            # record's title is wholly contained in ours and ours is longer,
+            # ours is the fuller form and replacing it would lose information.
+            if remote_title and local_title:
+                if (
+                    token_containment(remote_title, local_title) >= 1.0
+                    and len(normalize_for_match(local_title))
+                    > len(normalize_for_match(remote_title))
+                ):
+                    title = local_title
             values[name] = text_to_latex(title, protect_caps=True)
             if (
                 latex_to_text(local.title)
@@ -407,6 +442,9 @@ def build_entry(
 
     # Apply the missing-data policy.
     never = set(missing_cfg.get("never_placeholder") or [])
+    trusted_absence = set(missing_cfg.get("trust_verified_absence") or [])
+    is_verified = verification.status == VERIFIED
+
     final: Dict[str, str] = {}
     for name in schema:
         value = (values.get(name) or "").strip()
@@ -415,6 +453,10 @@ def build_entry(
             continue
         if name in never:
             continue  # absent by convention, not a defect
+        if name in trusted_absence and is_verified:
+            # We asked the authority and it has no such value, so the field
+            # genuinely does not exist for this work.
+            continue
         result.missing.append(name)
         if missing_cfg["policy"] == "placeholder":
             final[name] = missing_cfg["placeholder"]
@@ -431,8 +473,13 @@ def validate(result: ProcessedEntry, config: Dict[str, Any]) -> List[str]:
         problems.append(f"no schema for type '{result.entry_type}'")
         return problems
 
-    never = set(config["missing"].get("never_placeholder") or [])
-    expected = [f for f in schema if f not in never or f in result.fields]
+    # A field is only "expected" if it could meaningfully be present: fields
+    # absent by convention, and fields a verified record says don't exist, are
+    # legitimately missing rather than schema violations.
+    optional = set(config["missing"].get("never_placeholder") or [])
+    if result.verification.status == VERIFIED:
+        optional |= set(config["missing"].get("trust_verified_absence") or [])
+    expected = [f for f in schema if f not in optional or f in result.fields]
 
     unexpected = [f for f in result.fields if f not in schema]
     if unexpected:

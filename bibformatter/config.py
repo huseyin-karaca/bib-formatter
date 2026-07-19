@@ -55,6 +55,16 @@ DEFAULTS: Dict[str, Any] = {
         # Fields never worth a placeholder even in placeholder mode: an absent
         # edition means "1st edition", not "unknown".
         "never_placeholder": ["edition"],
+        # Fields where a *verified* record having no value is taken as "this
+        # does not exist" rather than "we could not find it".
+        #
+        # Many journals (IEEE TASLP, OJSP, SPL) publish continuously and
+        # register no issue number, and ICLR/NeurIPS papers have no page range.
+        # Writing `no.~MISSING` or `p.~MISSING` into a submitted manuscript is
+        # a visible defect, so when the authoritative record is silent on these
+        # the field is simply omitted. Entries we could not verify still get a
+        # placeholder, because there the data really is unknown.
+        "trust_verified_absence": ["number", "pages", "edition"],
     },
     # --- authors -------------------------------------------------------------
     "authors": {

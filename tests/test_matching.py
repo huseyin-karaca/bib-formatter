@@ -160,3 +160,40 @@ class TestBestCandidate:
 
     def test_skips_empty_records(self):
         assert best_candidate([Record(source="x")], "T", [], "2020", None) is None
+
+
+class TestDisjointAuthorsVeto:
+    """Two papers can share nearly all of a title and be different work.
+    Accepting such a match is the worst possible outcome: it grafts one
+    paper's venue, year and pages onto another paper's authors."""
+
+    VMOE = "Scaling vision with sparse mixture of experts"
+    VMOE_AUTHORS = ["Carlos Riquelme", "Joan Puigcerver", "Basil Mustafa",
+                    "Neil Houlsby"]
+    OTHER = make("Scaling Vision-Language Models with Sparse Mixture of Experts",
+                 ["Sheng Shen", "Zhewei Yao", "Chunyuan Li", "Yuxiong He"], "2023")
+
+    def test_similar_title_with_no_shared_author_is_not_verified(self):
+        result = score(self.VMOE, self.VMOE_AUTHORS, "2021", None, self.OTHER)
+        assert result.title >= ACCEPT       # the titles really are that close
+        assert result.authors == 0.0
+        assert classify(result, ACCEPT, REVIEW) == "fuzzy"
+
+    def test_a_shared_author_lets_a_strong_title_verify(self):
+        right = make(self.VMOE, self.VMOE_AUTHORS, "2021")
+        result = score(self.VMOE, self.VMOE_AUTHORS, "2021", None, right)
+        assert classify(result, ACCEPT, REVIEW) == "verified"
+
+    def test_missing_author_data_is_not_treated_as_disagreement(self):
+        # Some records carry no author list; that is absence of evidence.
+        bare = make("Attention Is All You Need", [], "2017")
+        result = score("Attention Is All You Need", ["Ashish Vaswani"], "2017",
+                       None, bare)
+        assert result.authors_comparable is False
+        assert classify(result, ACCEPT, REVIEW) == "verified"
+
+    def test_a_shared_doi_still_overrides_the_veto(self):
+        # Author lists get mangled; an agreed DOI is stronger evidence.
+        rec = make("The Real Title", ["Someone Else"], "2017", doi="10.1234/xyz")
+        result = score("A Typo'd Titel", ["Ada Lovelace"], "2017", "10.1234/xyz", rec)
+        assert classify(result, ACCEPT, REVIEW) == "verified"

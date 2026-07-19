@@ -74,10 +74,25 @@ _PREPRINT_VENUES = re.compile(
 )
 
 
+# DBLP and Semantic Scholar both file preprints under a pseudo-volume of the
+# form "abs/2101.03961". That is an arXiv id, not a volume, and typesets as
+# "vol. abs/2101.03961".
+_PSEUDO_VOLUME = re.compile(r"^\s*abs/", re.I)
+
+
 def _fix_preprint_kind(record: Record) -> Record:
-    """Downgrade a record to `preprint` when its venue is a preprint server."""
+    """Normalize a record's kind and drop values that are not what they claim.
+
+    Applied to every provider's output, since these conventions show up across
+    databases and a record is trusted to overwrite the user's metadata.
+    """
     if record.venue and _PREPRINT_VENUES.match(record.venue.strip()):
         record.kind = PREPRINT
+    if record.volume and _PSEUDO_VOLUME.match(record.volume):
+        # Keep the identifier if we don't already have one — it's a usable link.
+        if not record.arxiv_id:
+            record.arxiv_id = record.volume.split("/", 1)[1].strip()
+        record.volume = ""
     return record
 
 
@@ -308,10 +323,21 @@ class DblpProvider:
                 records.append(record)
         return records
 
+    # JMLR and PMLR paginate per article, which DBLP writes as "120:1-120:39":
+    # article 120, pages 1-39. Left alone it typesets as "pp. 120:1-120:39".
+    _ARTICLE_PAGES = re.compile(r"^(\d+):(\d+)\s*-\s*(\d+):(\d+)$")
+
     def _to_record(self, info: Dict[str, Any]) -> Optional[Record]:
         title = _clean(info.get("title")).rstrip(".")
         if not title:
             return None
+
+        pages = _clean(info.get("pages"))
+        number = _clean(info.get("number"))
+        article = self._ARTICLE_PAGES.match(pages)
+        if article and article.group(1) == article.group(3):
+            number = number or article.group(1)
+            pages = f"{article.group(2)}-{article.group(4)}"
 
         raw_authors = (info.get("authors") or {}).get("author") or []
         if isinstance(raw_authors, dict):
@@ -333,8 +359,8 @@ class DblpProvider:
             venue=_clean(info.get("venue")),
             kind=DBLP_TYPE_MAP.get(_clean(info.get("type")), MISC),
             volume=_clean(info.get("volume")),
-            number=_clean(info.get("number")),
-            pages=normalize_pages(_clean(info.get("pages"))),
+            number=number,
+            pages=normalize_pages(pages),
             publisher=_clean(info.get("publisher")),
             doi=_clean(info.get("doi")),
             url=_clean(info.get("ee")) or _clean(info.get("url")),

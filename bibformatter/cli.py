@@ -247,8 +247,13 @@ def main(argv: List[str] | None = None) -> int:
     finally:
         http.close()
 
+    # BibTeX refuses to build a file with a repeated key, so the output carries
+    # one entry per key regardless of what the input held.
+    results, dropped = writer.deduplicate(results, config)
+
     summary = report.summarize(results, config)
     summary["duplicate_keys"] = duplicates
+    summary["dropped_duplicates"] = dropped
     summary["dead_hosts"] = http.dead_hosts
 
     # Writing the .bib

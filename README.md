@@ -144,7 +144,15 @@ The rules behind that:
   then the full DOI, then a direct URL. An arXiv ID is resolved to the published
   DOI first, then shortened.
 - **Missing fields** are either filled with `MISSING` or omitted, per config, and
-  always listed in the report.
+  always listed in the report. A field a *verified* record simply doesn't carry
+  is treated as genuinely absent rather than missing — IEEE TASLP and OJSP
+  publish continuously and register no issue number, and ICLR papers have no
+  page range, so `no.~MISSING` would be a visible defect in the typeset output.
+  Unverified entries still get a placeholder, because there the data really is
+  unknown.
+- **Duplicate citation keys** are collapsed to one entry. BibTeX errors on a
+  repeated key and uses only the first definition, so emitting every copy would
+  produce a file that will not build.
 
 ## Verification
 
@@ -166,8 +174,24 @@ proximity, giving one of three verdicts:
 | `fuzzy` | Close, but not conclusive. Reported with the candidate; **your** metadata is kept. |
 | `unverified` | No database recognised it. Possibly fabricated — check by hand. |
 
-A `fuzzy` result never silently overwrites your entry; that is a deliberate
-choice, because a wrong "correction" is worse than no correction.
+A `fuzzy` result never silently overwrites your entry — not even its DOI — and
+that is a deliberate choice, because a wrong "correction" is worse than no
+correction.
+
+Two guards exist because their absence produced real damage:
+
+- **No shared author means it is not the same work.** "Scaling Vision with
+  Sparse MoE" and "Scaling Vision-Language Models with Sparse MoE" differ by one
+  word and share no author. Accepting that match is the worst outcome available:
+  it grafts one paper's venue, year and pages onto another paper's authors.
+- **A truncated title is not a different title, but a similar one might be.**
+  A weak title match is only accepted when one title is wholly contained in the
+  other. Same-author-same-year is not enough on its own: "Sequence Transduction
+  with RNNs" and "Supervised Sequence Labelling with RNNs" are both Graves 2012,
+  and are different works.
+
+Conversely, a database's title never replaces yours when yours is the fuller
+form — many records store a title without its subtitle.
 
 Two details worth knowing:
 

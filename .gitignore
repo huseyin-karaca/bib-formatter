@@ -12,4 +12,21 @@ dist/
 
 # Generated output
 *.formatted.bib
+*_formatted.bib
 report.json
+
+# Manuscript sources — not part of the tool or the package
+main.tex
+figures/
+*.pdf
+
+# LaTeX build products
+*.aux
+*.bbl
+*.blg
+*.log
+*.out
+*.synctex.gz
+*.fdb_latexmk
+*.fls
+*.toc

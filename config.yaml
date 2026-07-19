@@ -21,6 +21,12 @@ missing:
   placeholder: MISSING
   # An absent `edition` means "1st", not "unknown" — don't flag it.
   never_placeholder: [edition]
+  # Fields where a *verified* record having no value means "this doesn't exist"
+  # rather than "not found". IEEE TASLP/OJSP/SPL publish continuously and
+  # register no issue number; ICLR and NeurIPS papers have no page range.
+  # Without this you get a literal `no.~MISSING` in the typeset bibliography.
+  # Unverified entries still get a placeholder — there the data really is unknown.
+  trust_verified_absence: [number, pages, edition]
 
 authors:
   separator: " and "

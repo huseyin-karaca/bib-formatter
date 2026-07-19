@@ -7,7 +7,7 @@ with the continuation lines aligned under the first.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 from bibformatter.schema import ProcessedEntry
 
@@ -48,6 +48,42 @@ def format_entry(result: ProcessedEntry, config: Dict[str, Any]) -> str:
         lines.append(f"{prefix}{value}}}{comma}")
     lines.append("}")
     return "\n".join(lines)
+
+
+def deduplicate(
+    results: List[ProcessedEntry], config: Dict[str, Any]
+) -> Tuple[List[ProcessedEntry], List[Dict[str, Any]]]:
+    """Collapse entries that share a citation key.
+
+    BibTeX treats a repeated key as an error and uses only the first
+    definition, so emitting every copy produces a file that will not build.
+    Keeping the first matches what BibTeX would have done anyway.
+
+    Returns (unique entries, dropped) where each dropped record notes whether
+    the copies were identical — if they were not, the input had two different
+    works under one key and something is genuinely lost.
+    """
+    seen: Dict[str, str] = {}
+    unique: List[ProcessedEntry] = []
+    dropped: List[Dict[str, Any]] = []
+
+    for result in results:
+        if not result.key:
+            unique.append(result)
+            continue
+        rendered = format_entry(result, config)
+        if result.key not in seen:
+            seen[result.key] = rendered
+            unique.append(result)
+            continue
+        dropped.append(
+            {
+                "key": result.key,
+                "identical": rendered == seen[result.key],
+                "title": result.fields.get("title", ""),
+            }
+        )
+    return unique, dropped
 
 
 def write_bib(

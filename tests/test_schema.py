@@ -500,3 +500,264 @@ def load_config_from(data):
         return load_config(path)
     finally:
         os.remove(path)
+
+
+class TestTrustedAbsence:
+    """A verified record that carries no issue number means the journal has
+    none — not that we failed to find it. Writing MISSING there puts a literal
+    `no.~MISSING` in the typeset bibliography."""
+
+    def test_verified_journal_without_issue_omits_number(self, config):
+        record = Record(source="crossref", title="T", year="2021", kind=JOURNAL,
+                        venue="IEEE/ACM Transactions on Audio, Speech, and Language Processing",
+                        authors=["Ada Lovelace"], volume="29", pages="3451--3460",
+                        doi="10.1109/TASLP.2021.3122291")
+        result = build(
+            {"ID": "x", "ENTRYTYPE": "article", "author": "Ada Lovelace",
+             "title": "T", "year": "2021", "doi": "10.1109/TASLP.2021.3122291"},
+            config, verified(record),
+        )
+        assert "number" not in result.fields
+        assert "number" not in result.missing
+        # A legitimately absent field is not a schema violation.
+        assert validate(result, config) == []
+
+    def test_note_is_never_treated_as_legitimately_absent(self, config):
+        # Rule 6 requires a link on every entry, so a missing one is a real gap
+        # even when the record is verified.
+        record = Record(source="crossref", title="T", year="2021", kind=JOURNAL,
+                        venue="Neural Computation", authors=["Ada Lovelace"],
+                        volume="29")
+        result = build(
+            {"ID": "x", "ENTRYTYPE": "article", "author": "Ada Lovelace",
+             "title": "T", "year": "2021"},
+            config, verified(record),
+        )
+        assert result.fields["note"] == "MISSING"
+        assert "note" in result.missing
+
+    def test_verified_conference_without_pages_omits_pages(self, config):
+        record = Record(source="dblp", title="T", year="2021", kind=CONFERENCE,
+                        venue="ICLR", authors=["Ada Lovelace"])
+        result = build(
+            {"ID": "x", "ENTRYTYPE": "inproceedings", "author": "Ada Lovelace",
+             "title": "T", "year": "2021"},
+            config, verified(record),
+        )
+        assert "pages" not in result.fields
+
+    def test_unverified_entry_still_gets_a_placeholder(self, config):
+        # Here the data really is unknown, so the gap must stay visible.
+        result = build(
+            {"ID": "x", "ENTRYTYPE": "article", "author": "A B", "title": "T",
+             "year": "2020"},
+            config,
+        )
+        assert result.fields["number"] == "MISSING"
+        assert "number" in result.missing
+
+    def test_known_value_is_still_used(self, config):
+        record = Record(source="crossref", title="T", year="2014", kind=JOURNAL,
+                        venue="Neural Computation", authors=["Ada Lovelace"],
+                        volume="22", number="4", pages="745--777")
+        result = build(
+            {"ID": "x", "ENTRYTYPE": "article", "author": "Ada Lovelace",
+             "title": "T", "year": "2014"},
+            config, verified(record),
+        )
+        assert result.fields["number"] == "4"
+
+    def test_can_be_disabled_for_strict_field_counts(self, config):
+        config["missing"]["trust_verified_absence"] = []
+        record = Record(source="crossref", title="T", year="2021", kind=JOURNAL,
+                        venue="Neural Computation", authors=["Ada Lovelace"],
+                        volume="29", pages="3451--3460")
+        result = build(
+            {"ID": "x", "ENTRYTYPE": "article", "author": "Ada Lovelace",
+             "title": "T", "year": "2021"},
+            config, verified(record),
+        )
+        assert result.fields["number"] == "MISSING"
+
+
+class TestLinkFallbacks:
+    def test_arxiv_id_becomes_the_link_when_there_is_no_doi(self, config):
+        # ICLR, JMLR and older workshops register no DOI; an arXiv id we found
+        # along the way beats emitting MISSING.
+        record = Record(source="dblp", title="T", year="2017", kind=CONFERENCE,
+                        venue="ICLR", authors=["Noam Shazeer"],
+                        arxiv_id="1701.06538")
+        result = build(
+            {"ID": "x", "ENTRYTYPE": "inproceedings", "author": "Noam Shazeer",
+             "title": "T", "year": "2017"},
+            config, verified(record),
+        )
+        assert result.fields["note"] == r"\url{https://arxiv.org/abs/1701.06538}"
+
+    def test_local_arxiv_id_is_used_when_the_record_has_none(self, config):
+        result = build(
+            {"ID": "x", "ENTRYTYPE": "inproceedings", "author": "A B", "title": "T",
+             "year": "2017", "eprint": "1701.06538", "archiveprefix": "arXiv"},
+            config,
+        )
+        assert result.fields["note"] == r"\url{https://arxiv.org/abs/1701.06538}"
+
+    def test_doi_still_wins_over_arxiv(self, config):
+        record = Record(source="crossref", title="T", year="2017", kind=CONFERENCE,
+                        venue="ICML", authors=["A B"], doi="10.1234/real",
+                        arxiv_id="1701.06538")
+        result = build(
+            {"ID": "x", "ENTRYTYPE": "inproceedings", "author": "A B",
+             "title": "T", "year": "2017"},
+            config, verified(record),
+        )
+        assert result.fields["note"] == r"\url{https://doi.org/10.1234/real}"
+
+
+class TestPreprintFieldLeakage:
+    def test_volume_is_not_taken_from_a_preprint_record(self, config):
+        # DBLP files preprints under a pseudo-volume "abs/2101.03961", which
+        # would otherwise be typeset as "vol. abs/2101.03961".
+        record = Record(source="dblp", title="T", year="2021", kind=PREPRINT,
+                        venue="CoRR", authors=["William Fedus"],
+                        volume="abs/2101.03961")
+        result = build(
+            {"ID": "x", "ENTRYTYPE": "article", "author": "William Fedus",
+             "title": "T", "year": "2021", "journal": "JMLR"},
+            config, verified(record),
+        )
+        assert result.fields.get("volume") != "abs/2101.03961"
+
+    def test_volume_is_still_taken_from_a_published_record(self, config):
+        record = Record(source="dblp", title="T", year="2022", kind=JOURNAL,
+                        venue="Journal of Machine Learning Research",
+                        authors=["William Fedus"], volume="23", number="120")
+        result = build(
+            {"ID": "x", "ENTRYTYPE": "article", "author": "William Fedus",
+             "title": "T", "year": "2022"},
+            config, verified(record),
+        )
+        assert result.fields["volume"] == "23"
+        assert result.fields["number"] == "120"
+
+
+class TestDblpConventions:
+    """DBLP encodes two things in ways that must not reach a .bib verbatim."""
+
+    def test_article_pagination_is_split_into_number_and_pages(self):
+        from bibformatter.providers import DblpProvider
+        record = DblpProvider.__new__(DblpProvider)._to_record({
+            "title": "Switch Transformers", "volume": "23",
+            "pages": "120:1-120:39", "type": "Journal Articles",
+            "year": "2022", "venue": "J. Mach. Learn. Res.",
+        })
+        # JMLR paginates per article: article 120, pages 1-39.
+        assert record.volume == "23"
+        assert record.number == "120"
+        assert record.pages == "1--39"
+
+    def test_ordinary_pagination_is_untouched(self):
+        from bibformatter.providers import DblpProvider
+        record = DblpProvider.__new__(DblpProvider)._to_record({
+            "title": "X", "volume": "22", "number": "4", "pages": "745-777",
+            "type": "Journal Articles", "year": "2014",
+        })
+        assert (record.volume, record.number, record.pages) == ("22", "4", "745--777")
+
+    def test_pseudo_volume_is_rejected_and_kept_as_an_arxiv_id(self):
+        from bibformatter.providers import _fix_preprint_kind, Record as R
+        record = _fix_preprint_kind(
+            R(source="s2", title="T", kind=JOURNAL, venue="JMLR",
+              volume="abs/2101.03961")
+        )
+        assert record.volume == ""
+        assert record.arxiv_id == "2101.03961"
+
+    def test_real_volume_survives_sanitizing(self):
+        from bibformatter.providers import _fix_preprint_kind, Record as R
+        record = _fix_preprint_kind(
+            R(source="x", title="T", kind=JOURNAL, venue="Neural Computation",
+              volume="23")
+        )
+        assert record.volume == "23"
+
+
+class TestFuzzyRecordIsNotTrusted:
+    """A fuzzy candidate was rejected as probably-a-different-paper. It must not
+    contribute *any* data, identifiers included."""
+
+    WRONG = Record(source="crossref", title="A Different Paper", year="2023",
+                   kind=CONFERENCE, venue="EMNLP", doi="10.1234/wrong",
+                   url="https://example.org/wrong", authors=["Someone Else"],
+                   pages="11329--11344")
+
+    def fuzzy(self):
+        from bibformatter.verify import FUZZY
+        return Verification(status=FUZZY, record=self.WRONG, source="crossref")
+
+    def test_fuzzy_doi_does_not_become_the_note(self, config):
+        result = build(
+            {"ID": "x", "ENTRYTYPE": "inproceedings", "author": "Ada Lovelace",
+             "title": "The Real Paper", "year": "2021"},
+            config, self.fuzzy(),
+        )
+        assert "10.1234/wrong" not in result.fields["note"]
+        assert "example.org/wrong" not in result.fields["note"]
+
+    def test_fuzzy_record_does_not_supply_pages(self, config):
+        result = build(
+            {"ID": "x", "ENTRYTYPE": "inproceedings", "author": "Ada Lovelace",
+             "title": "The Real Paper", "year": "2021"},
+            config, self.fuzzy(),
+        )
+        assert result.fields.get("pages") != "11329--11344"
+
+    def test_local_identifiers_are_still_used(self, config):
+        result = build(
+            {"ID": "x", "ENTRYTYPE": "inproceedings", "author": "Ada Lovelace",
+             "title": "The Real Paper", "year": "2021", "doi": "10.5555/mine"},
+            config, self.fuzzy(),
+        )
+        assert result.fields["note"] == r"\url{https://doi.org/10.5555/mine}"
+
+
+class TestTitleCompleteness:
+    """Databases frequently store a title without its subtitle. Replacing a
+    fuller local title with a truncated one loses information."""
+
+    def test_truncated_remote_title_does_not_replace_a_fuller_local_one(self, config):
+        record = Record(source="dblp", title="Automatic Speech Recognition",
+                        year="2015", kind=BOOK, authors=["Dong Yu", "Li Deng"],
+                        publisher="Springer")
+        result = build(
+            {"ID": "x", "ENTRYTYPE": "book",
+             "title": "Automatic speech recognition: A deep learning approach",
+             "author": "Dong Yu and Li Deng", "year": "2015",
+             "publisher": "Springer"},
+            config, verified(record),
+        )
+        assert "deep learning approach" in result.fields["title"].lower()
+
+    def test_fuller_remote_title_still_wins(self, config):
+        # The real AMI paper is titled "...: A Pre-announcement".
+        record = Record(source="crossref",
+                        title="The AMI Meeting Corpus: A Pre-announcement",
+                        year="2005", kind=CONFERENCE, venue="MLMI",
+                        authors=["Jean Carletta"])
+        result = build(
+            {"ID": "x", "ENTRYTYPE": "inproceedings", "title": "The AMI Meeting Corpus",
+             "author": "Jean Carletta", "year": "2005"},
+            config, verified(record),
+        )
+        assert result.fields["title"].endswith("Pre-announcement")
+
+    def test_a_genuinely_different_title_still_replaces(self, config):
+        record = Record(source="crossref", title="The Corrected Title",
+                        year="2005", kind=CONFERENCE, venue="ICML",
+                        authors=["Ada Lovelace"])
+        result = build(
+            {"ID": "x", "ENTRYTYPE": "inproceedings", "title": "The Wrong Titel",
+             "author": "Ada Lovelace", "year": "2005"},
+            config, verified(record),
+        )
+        assert "Corrected" in result.fields["title"]

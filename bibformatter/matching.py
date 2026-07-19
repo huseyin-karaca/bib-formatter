@@ -31,6 +31,9 @@ class MatchScore:
     contains: float = 0.0
     overall: float = 0.0
     doi_exact: bool = False
+    # Whether both sides actually listed authors. Without this, "no overlap" and
+    # "nothing to compare" are indistinguishable, and only the former is evidence.
+    authors_comparable: bool = False
 
     def as_dict(self) -> dict:
         return {
@@ -123,6 +126,7 @@ def score(
     result.authors = author_overlap(local_authors, record.authors)
     result.year = year_proximity(local_year, record.year, year_tolerance)
     result.contains = token_containment(local_title, record.title)
+    result.authors_comparable = bool(local_authors) and bool(record.authors)
 
     if local_doi and record.doi and local_doi.lower() == record.doi.lower():
         result.doi_exact = True
@@ -144,16 +148,24 @@ def classify(
     if result.doi_exact:
         return "verified"
 
+    # Two papers can share almost all of a title and still be different work
+    # ("Scaling Vision with Sparse MoE" vs "Scaling Vision-Language Models with
+    # Sparse MoE"). Sharing no author at all is decisive evidence of that, and
+    # accepting such a match is the worst outcome available: it grafts one
+    # paper's venue, year and pages onto another's authors.
+    if result.authors_comparable and result.authors == 0.0:
+        return "fuzzy" if result.title >= review_threshold else "no-match"
+
     if result.title >= accept_threshold:
-        # Guard against different papers that happen to share a title: if both
-        # the authors and the year disagree completely, don't call it verified.
-        if result.authors == 0.0 and result.year == 0.0:
-            return "fuzzy"
         return "verified"
 
     if result.title >= review_threshold:
-        # A weaker title match is still convincing with the right authors and year.
-        if result.authors >= 0.6 and result.year >= 0.75:
+        # A weaker title match is convincing only when one title is essentially
+        # a truncation of the other. Same-author-same-year is not enough on its
+        # own: prolific authors publish related work in the same year, and
+        # "Sequence Transduction with RNNs" and "Supervised Sequence Labelling
+        # with RNNs" are both Graves 2012 — and are different works.
+        if result.contains >= 0.9 and result.authors >= 0.6 and result.year >= 0.75:
             return "verified"
         return "fuzzy"
 

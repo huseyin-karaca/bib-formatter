@@ -199,3 +199,33 @@ class TestParser:
         _, raws = load_entries(FIXTURE)
         assert raws["lattimore2020bandit"].startswith("@book{lattimore2020bandit,")
         assert raws["lattimore2020bandit"].rstrip().endswith("}")
+
+
+class TestDeduplication:
+    """A repeated citation key makes BibTeX fail outright, so the output must
+    never contain one — whatever the input held."""
+
+    def test_output_has_no_repeated_keys(self, formatted):
+        text, _, _ = formatted
+        keys = [
+            line.split("{", 1)[1].rstrip(",")
+            for line in text.splitlines()
+            if line.startswith("@") and "{" in line
+        ]
+        assert len(keys) == len(set(keys)), "duplicate key would break BibTeX"
+
+    def test_duplicate_is_reported_as_merged(self, formatted):
+        _, _, report = formatted
+        dropped = {d["key"]: d for d in report["dropped_duplicates"]}
+        assert "dupe2021" in dropped
+
+    def test_conflicting_duplicates_are_flagged_as_not_identical(self, formatted):
+        # The fixture's two dupe2021 entries are different works.
+        _, _, report = formatted
+        dropped = {d["key"]: d for d in report["dropped_duplicates"]}
+        assert dropped["dupe2021"]["identical"] is False
+
+    def test_first_definition_wins(self, formatted):
+        # BibTeX itself keeps the first, so the output must agree with it.
+        _, entries, _ = formatted
+        assert entries["dupe2021"]["title"] == "First Version"
