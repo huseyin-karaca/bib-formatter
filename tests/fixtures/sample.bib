@@ -1,0 +1,81 @@
+% A small bibliography exercising the messy cases bib-formatter has to handle.
+
+@IEEEtranBSTCTL{IEEEexample:BSTcontrol,
+  CTLmax_names_forced_etal = "6",
+  CTLnames_show_etal = "1"
+}
+
+% Journal article: initials, en-dash pages, noisy extra fields.
+@ARTICLE{li2014overview,
+  author={Li, Jinyu and Deng, Li and Gong, Yifan},
+  journal={IEEE/ACM Transactions on Audio, Speech, and Language Processing},
+  title={An Overview of Noise-Robust Automatic Speech Recognition},
+  year={2014},
+  volume={22},
+  number={4},
+  pages={745-777},
+  keywords={Speech;Noise robustness;Acoustic distortion},
+  abstract={A long abstract that must not survive formatting.},
+  doi={10.1109/TASLP.2014.2304637}}
+
+% Conference paper with abbreviated venue.
+@inproceedings{someone2020conf,
+  author    = {Doe, Jane and Roe, Richard},
+  title     = {A Paper About Things},
+  booktitle = {Proc. Int. Conf. Mach. Learn. (ICML)},
+  pages     = {1--6},
+  year      = {2020}
+}
+
+% Book with no DOI and no edition.
+@book{lattimore2020bandit,
+  title={Bandit Algorithms},
+  author={Lattimore, Tor and Szepesv{\'a}ri, Csaba},
+  year={2020},
+  publisher={Cambridge University Press}
+}
+
+% Preprint that was actually published: should not stay @misc.
+@misc{vaswani2017attention,
+      title={Attention Is All You Need},
+      author={Ashish Vaswani and Noam Shazeer and Niki Parmar},
+      year={2017},
+      eprint={1706.03762},
+      archivePrefix={arXiv},
+      url={https://arxiv.org/abs/1706.03762}
+}
+
+% Web resource: no database will have it, and that is correct.
+@online{torchdocs,
+  author = {{PyTorch Contributors}},
+  title  = {torch.optim.lr\_scheduler.ReduceLROnPlateau},
+  year   = {2025},
+  url    = {https://pytorch.org/docs/stable/generated/torch.optim.lr_scheduler.ReduceLROnPlateau.html},
+  note   = {Accessed: Aug. 15, 2025}
+}
+
+% Venue containing an escaped ampersand.
+@article{amp2019journal,
+  author  = {Ada Lovelace},
+  title   = {On Escaping},
+  journal = {International Journal on Cybernetics \& Informatics (IJCI)},
+  year    = {2019},
+  volume  = {7},
+  number  = {2},
+  pages   = {11--20}
+}
+
+% Duplicate citation key: BibTeX would silently keep only one.
+@article{dupe2021,
+  author = {First Author},
+  title  = {First Version},
+  journal = {Journal of Things},
+  year = {2021}
+}
+
+@article{dupe2021,
+  author = {Second Author},
+  title  = {Second Version},
+  journal = {Journal of Things},
+  year = {2021}
+}

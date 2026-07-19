@@ -1,0 +1,80 @@
+# bib-formatter configuration.
+# Everything here is optional — values not listed fall back to the built-in
+# defaults in bibformatter/config.py. Pass with:  bib-formatter in.bib -c config.yaml
+
+# ---------------------------------------------------------------------------
+# Target shape of each entry type. The order is also the output field order.
+# ---------------------------------------------------------------------------
+schemas:
+  inproceedings: [author, year, pages, title, booktitle, note]
+  article:       [author, journal, note, number, pages, title, volume, year]
+  book:          [author, year, publisher, title, note, edition]
+  # Fallback for entries that are genuinely not a paper or a book
+  # (datasets, model cards, software documentation).
+  misc:          [author, year, title, note]
+
+# ---------------------------------------------------------------------------
+# Missing required fields: "placeholder" writes MISSING, "omit" drops the field.
+# ---------------------------------------------------------------------------
+missing:
+  policy: placeholder
+  placeholder: MISSING
+  # An absent `edition` means "1st", not "unknown" — don't flag it.
+  never_placeholder: [edition]
+
+authors:
+  separator: " and "
+  one_per_line: true        # each author on its own line
+  name_order: first-last    # "Ada Lovelace"  (use last-first for "Lovelace, Ada")
+  require_full_names: true  # report entries still holding initials
+
+venues:
+  append_acronym: true      # "... Learning Representations (ICLR)"
+  strip_boilerplate: true   # drop "Proc. of the 12th ..." noise before matching
+  # Add venues the built-in table doesn't know about:
+  acronyms: {}
+  #  "International Workshop on Speech Processing in Everyday Environments": "CHiME"
+
+links:
+  # Short DOI is preferred, then the plain DOI, then any direct URL.
+  priority: [short_doi, doi, url]
+  resolve_arxiv_to_doi: true   # arXiv id -> published DOI -> short DOI
+  preserve_note_text: true     # keep "Accessed: Aug. 2025" and append the URL
+
+network:
+  enabled: true
+  cache_path: .bibformatter-cache.json
+  cache_ttl_days: 90
+  timeout: 30
+  max_retries: 3           # exponential backoff between attempts
+  backoff_factor: 1.5
+  backoff_max: 60
+  min_interval: 0.25       # seconds between requests to the same host
+  host_intervals:          # per-host overrides; these APIs throttle hard
+    export.arxiv.org: 3.0
+    dblp.org: 2.0
+    api.semanticscholar.org: 1.5
+  circuit_threshold: 3     # give up on a host after this many failures in a row
+  # Crossref's "polite pool" gives far better rate limits. Also settable with
+  # the CROSSREF_MAILTO environment variable.
+  mailto: null
+  # Optional, raises Semantic Scholar limits. Env: SEMANTIC_SCHOLAR_API_KEY
+  semantic_scholar_api_key: null
+
+# ---------------------------------------------------------------------------
+# Every entry is looked up in these databases, in order, until one confidently
+# matches. This is what catches fabricated references.
+# ---------------------------------------------------------------------------
+verification:
+  enabled: true
+  providers: [crossref, dblp, openalex, semanticscholar, arxiv]
+  accept_threshold: 0.90   # title similarity to accept a record as the same work
+  review_threshold: 0.70   # below accept but above this -> flagged "fuzzy"
+  year_tolerance: 1        # preprint year vs proceedings year
+  overwrite_fields: true   # let the verified record correct wrong metadata
+  protected_fields: []     # e.g. [note] to never touch your own notes
+
+output:
+  sort_by: key             # key | none
+  indent: "  "
+  align_values: true

@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bib-formatter"
+version = "0.1.0"
+description = "Verify, correct and standardize BibTeX files against Crossref, arXiv, DBLP, OpenAlex and Semantic Scholar."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Huseyin Karaca" }]
+keywords = ["bibtex", "bibliography", "crossref", "doi", "latex"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Text Processing :: Markup :: LaTeX",
+]
+dependencies = [
+    "bibtexparser>=1.4,<2",
+    "requests>=2.28",
+    "PyYAML>=6.0",
+    "pylatexenc>=2.10",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[project.scripts]
+bib-formatter = "bibformatter.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/huseyin-karaca/bib-formatter"
+Issues = "https://github.com/huseyin-karaca/bib-formatter/issues"
+
+[tool.setuptools.packages.find]
+include = ["bibformatter*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

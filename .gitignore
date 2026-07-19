@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+
+# Local API response cache
+.bibformatter-cache.json
+
+# Generated output
+*.formatted.bib
+report.json
